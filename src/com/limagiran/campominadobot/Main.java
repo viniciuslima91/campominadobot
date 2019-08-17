@@ -1,19 +1,39 @@
 package com.limagiran.campominadobot;
 
 import java.awt.BorderLayout;
-import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.Insets;
+import java.awt.MouseInfo;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.Window;
 import java.awt.event.ActionEvent;
-import javax.swing.*;
-import javax.swing.UIManager.LookAndFeelInfo;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
+import javax.swing.AbstractAction;
+import javax.swing.BorderFactory;
+import javax.swing.InputMap;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComponent;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.KeyStroke;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 
 /**
  *
  * @author Vinicius Silva
  */
 public class Main {
+
+    volatile public static boolean PLAY_TO_WIN = false;
+    volatile private static int PLAY_TO_WIN_REPEAT_COUNT = 0;
 
     /**
      * Texto do label principal
@@ -31,8 +51,7 @@ public class Main {
             + "<h1>Campo Minado Bot</h1>"
             + "<div>"
             + "  <p>"
-            + "    Clique em <b>Iniciar</b> com a janela do campo minado já em exibição "
-            + "    e com o jogo reiniciado. Iniciar o bot com o jogo já iniciado pode não dar certo."
+            + "    Clique em <b>Iniciar</b> com a janela do campo minado já em exibição na tela."
             + "  </p>"
             + "  <p>"
             + "    O programa está configurado para clicar em algum campo aleatoriamente "
@@ -45,25 +64,13 @@ public class Main {
             + "    da grande quantidade de jogadas que exigem sorte."
             + "  </p>"
             + "  <p>"
-            + "    Atualmente o programa só calcula uma lógica simples de quantidade "
-            + "    de campos/bandeiras ao redor. Em muitos casos é possível saber, por dedução/exclusão, "
-            + "    qual é a casa que obrigatoriamente vai ter bomba, clicando nos campos seguros "
-            + "    para proseguir, porém o programa ainda não tem essa lógica implementada."
+            + "    Melhores tempos nos testes: Principiante: <b>1s</b> - Intermediário: <b>1s</b> - Especialista: <b>1s</b>"
             + "  </p>"
+            + "<br />"
             + "  <p>"
-            + "    Melhores tempos nos testes: Principiante: <b>1s</b> - Intermediário: <b>3s</b> - Especialista: <b>8s</b>"
+            + "    Obs.: Executar até vencer (a cada 10 tentativas, um delay de 2 segundos para cancelar [ESC])"
             + "  </p>"
             + "</div>";
-
-    /**
-     * Texto do botão enquanto o bot não está em execução
-     */
-    private static String BUTTON_TEXT_START = "Iniciar";
-
-    /**
-     * Texto do botão enquanto o bot está em execução
-     */
-    private static String BUTTON_TEXT_STARTED = "Jogando... (Parar)";
 
     /**
      * Área de texto que exibirá mensagens ao usuário
@@ -71,20 +78,10 @@ public class Main {
     private static JTextArea JTEXT_AREA_LOG;
 
     static {
-        //<editor-fold defaultstate="collapsed" desc="Apply Nimbus">
+        //<editor-fold defaultstate="collapsed" desc="SystemLookAndFeel">
         try {
-            for (LookAndFeelInfo info : UIManager.getInstalledLookAndFeels()) {
-                if ("Nimbus".equals(info.getName())) {
-                    UIManager.setLookAndFeel(info.getClassName());
-                    UIDefaults ui = UIManager.getLookAndFeelDefaults();
-                    ui.put("ScrollBar.minimumThumbSize", new Dimension(30, 30));
-                    ui.put("TextPane.contentMargins", new Insets(0, 3, 0, 3));
-                    ui.put("Button.contentMargins", new Insets(5, 8, 5, 8));
-                    break;
-                }
-            }
-        } catch (UnsupportedLookAndFeelException | ClassNotFoundException |
-                InstantiationException | IllegalAccessException e) {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
             System.err.println("Erro: " + e.getMessage());
         }
         //</editor-fold>
@@ -99,11 +96,16 @@ public class Main {
         SwingUtilities.invokeLater(() -> {
             JFrame frame = new JFrame("Campo Minado Bot - by Lima Giran (github.com/limagiran)");
 
-            //botão que inicia e encerra o bot
-            JButton buttonStart = new JButton(BUTTON_TEXT_START);
+            //botão que inicia o bot
+            JButton buttonStart = new JButton("Iniciar");
             buttonStart.setFont(new Font("Arial", Font.BOLD, 16));
             buttonStart.setFocusable(false);
             buttonStart.addActionListener(evt -> buttonAction(evt));
+
+            JCheckBox chkbxPlayToWin = new JCheckBox("Executar até vencer");
+            chkbxPlayToWin.addActionListener(evt -> PLAY_TO_WIN = chkbxPlayToWin.isSelected());
+            chkbxPlayToWin.setFont(new Font("Arial", Font.PLAIN, 16));
+            chkbxPlayToWin.setFocusable(false);
 
             //label que contém as informações do programa
             JLabel label = new JLabel(LABEL_TEXT, SwingConstants.CENTER);
@@ -111,11 +113,12 @@ public class Main {
             label.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
             //área para exibir mensagens ao usuário
-            JTEXT_AREA_LOG = new JTextArea("LOG", 4, 48);
+            JTEXT_AREA_LOG = new JTextArea("", 6, 48);
             JTEXT_AREA_LOG.setEditable(false);
 
-            JPanel buttonPanel = new JPanel(new FlowLayout());
+            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 16, 5));
             buttonPanel.add(buttonStart);
+            buttonPanel.add(chkbxPlayToWin);
 
             JPanel panel = new JPanel(new BorderLayout());
             panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
@@ -131,48 +134,40 @@ public class Main {
             frame.getContentPane().add(panel, "Center");
             frame.pack();
             frame.setLocationRelativeTo(null);
+
+            InputMap inputMap = frame.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+            frame.getRootPane().setInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW, inputMap);
+            inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "stop_play_to_win");
+            frame.getRootPane().getActionMap().put("stop_play_to_win", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    chkbxPlayToWin.setSelected(false);
+                    PLAY_TO_WIN = false;
+                }
+            });
+
             frame.setVisible(true);
         });
+        Utils.exportAndOpenWinmine();
     }
 
     /**
-     * Ação do botão principal. Executa o método de iniciar ou parar, de acordo
-     * com o texto sendo exibido no botão.
+     * Ação do botão principal.<br>
+     * Inicia o bot.
      *
      * @param evt evento do botão
      */
-    private static void buttonAction(ActionEvent evt) {
-        final JButton button = (JButton) evt.getSource();
-        if (button.getText().equals(BUTTON_TEXT_START)) {
-            start(button);
-        } else {
-            stop(button);
-        }
-    }
-
-    /**
-     * Inicia o bot
-     *
-     * @param button jbutton que realizou a ação
-     */
-    private static void start(JButton button) {
-        button.setText(BUTTON_TEXT_STARTED);
+    private static void buttonAction(final ActionEvent evt) {
+        PLAY_TO_WIN_REPEAT_COUNT = 0;
+        ((JButton) evt.getSource()).setEnabled(false);
+        notification("Jogo iniciado.", true);
         new Thread(() -> {
-            Utils.sleep(500);
-            notification("Jogo iniciado.", true);
             CampoMinadoBot.start();
-            SwingUtilities.invokeLater(() -> button.setText("Iniciar"));
+            SwingUtilities.invokeLater(() -> {
+                ((JButton) evt.getSource()).setEnabled(true);
+            });
         }).start();
-    }
 
-    /**
-     * Força o encerramento do bot
-     *
-     * @param button jbutton que realizou a ação
-     */
-    private static void stop(JButton button) {
-        button.setText(BUTTON_TEXT_START);
-        CampoMinadoBot.stop();
     }
 
     /**
@@ -186,7 +181,46 @@ public class Main {
         if (JTEXT_AREA_LOG == null) {
             return;
         }
-        SwingUtilities.invokeLater(() -> JTEXT_AREA_LOG.setText((!clear ? JTEXT_AREA_LOG.getText() + '\n' : "") + message));
+        SwingUtilities.invokeLater(() -> {
+            JTEXT_AREA_LOG.setText((!clear ? JTEXT_AREA_LOG.getText() + '\n' : "") + message);
+        });
+        checkPlayToWin(message);
+    }
+
+    /**
+     * Verifica se a mensagem de notificação recebida contém a palavra
+     * "Perdemos".<br>
+     * Se sim, verifica se a opção "Executar até vencer" está ativada, para
+     * iniciar uma nova tentativa automaticamente.
+     *
+     * @param message notificação recebida
+     */
+    public static void checkPlayToWin(String message) {
+        if (!PLAY_TO_WIN || !message.contains("Perdemos")) {
+            return;
+        }
+        PLAY_TO_WIN_REPEAT_COUNT++;
+        final boolean sleep = PLAY_TO_WIN_REPEAT_COUNT % 10 == 0;
+        final Point winmineLocation = MouseInfo.getPointerInfo().getLocation();
+        Window w = SwingUtilities.getWindowAncestor(JTEXT_AREA_LOG);
+        if (sleep && w != null) {
+            notification("Pressione ESC para parar.", true);
+            Rectangle bounds = w.getBounds();
+            Utils.ROBOT.mouseMove((int) bounds.getCenterX(), (int) bounds.getCenterY());
+            Utils.ROBOT.mousePress(InputEvent.BUTTON1_MASK);
+            Utils.ROBOT.mouseRelease(InputEvent.BUTTON1_MASK);
+        }
+        new Thread(() -> {
+            if (sleep) {
+                Utils.sleep(2000);
+            }
+            if (PLAY_TO_WIN) {
+                notification("Jogo iniciado.", true);
+                notification("Executar até vencer - tentativas: " + (PLAY_TO_WIN_REPEAT_COUNT + 1));
+                Utils.restartGame(winmineLocation.x, winmineLocation.y);
+                CampoMinadoBot.start();
+            }
+        }).start();
     }
 
     /**

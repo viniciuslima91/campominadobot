@@ -1,12 +1,15 @@
 package com.limagiran.campominadobot;
 
-import static com.limagiran.campominadobot.Utils.*;
 import java.awt.Color;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
-import java.util.*;
-import java.util.stream.*;
-import javax.swing.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import javax.swing.JOptionPane;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 
 /**
  *
@@ -54,14 +57,14 @@ public class CampoMinadoBot {
                     //o SMILE da janela do campo minado, capturando uma área 8x12
                     //e precisando conter pelo menos 24 pixels amarelos nessa área
                     //para considerar que a janela ainda está visível
-                    rect.setBounds((int) RECTANGLE.getCenterX() - 4, (int) RECTANGLE.getCenterX() - 24, 8, 12);
+                    rect.setBounds((int) RECTANGLE.getCenterX() - 4, (int) RECTANGLE.getY() - 32, 8, 12);
                     BufferedImage bi = Utils.ROBOT.createScreenCapture(rect);
                     if (Utils.countColor(bi, rgb) < 24) {
                         stop = true;
                     }
-                    //realiza o loop a cada 1 segundo
-                    Utils.sleep(1000);
                 }
+                //realiza o loop a cada 1 segundo
+                Utils.sleep(1000);
             }
         });
         checkStop.setDaemon(true);
@@ -110,29 +113,44 @@ public class CampoMinadoBot {
             final Rectangle[][] tilesRect = Utils.rectToGrid(rect);
             //cria os objetos que representam cada quadradinho do campo minado
             final Tile[][] tiles = new Tile[tilesRect.length][tilesRect[0].length];
+            final List<Tile> listTiles = new ArrayList<>(tiles.length * tiles[0].length * 2);
             for (int x = 0; x < tiles.length; x++) {
                 for (int y = 0; y < tiles[0].length; y++) {
-                    tiles[x][y] = new Tile(tilesRect[x][y], x, y);
+                    tiles[x][y] = new Tile(tilesRect[x][y], x, y, rect);
+                    listTiles.add(tiles[x][y]);
                 }
             }
             //escolhe um quadradinho aleatoriamente para iniciar o jogo
             final int xRandom = Utils.random(tiles.length) - 1;
             final int yRandom = Utils.random(tiles[0].length) - 1;
-            //aqui damos 2 cliques pois o primeiro clique apenas transferirá o foco
-            //para a janela do campo minado, o segundo irá efetivamente iniciar o jogo
-            tiles[xRandom][yRandom].click(tiles);
-            tiles[xRandom][yRandom].click(tiles);
+            Tile tRandom = tiles[xRandom][yRandom];
+            Utils.restartGame(tRandom.rect.x, tRandom.rect.y);
+
+            tRandom.click(tiles, true);
 
             //loop enquanto não há nada forçando a parada do bot
             //os métodos 'check' e 'execute' podem lançar exception, e é assim que
             //o código sairá do loop para encerrar o bot
+            int executionFailedCount = 0;
             while (!stop) {
+                //captura o mapa do jogo
+                final List<EnumTile> mapEnumTile = Utils.mapEnumTile(listTiles);
                 //marca as bandeiras
                 markFlagBomb(tiles);
                 //executa um clique
                 execute(tiles);
                 //verifica se alguma bomba foi clicada
                 check(tiles);
+                //compara o mapa atual do jogo com o do início da rodada
+                //se estiver igual, então houve alguma falha na execução do bot
+                if (Utils.mapEnumTile(listTiles).equals(mapEnumTile)) {
+                    executionFailedCount++;
+                    if (executionFailedCount >= 2) {
+                        throw new CampoMinadoAIException("Falha na execução do bot.");
+                    }
+                } else {
+                    executionFailedCount = 0;
+                }
             }
         } catch (CampoMinadoAIException ex) {
             //Jogo finalizado 'normalmente' através da exception personalizada
@@ -181,29 +199,47 @@ public class CampoMinadoBot {
      * @param tiles grade do campo minado
      */
     private static void execute(Tile[][] tiles) {
-        //array para poder ser utilizado em classe anônima
-        boolean[] hack = {false};
         //verifica todos os quadrados que são números (ou seja, já foram clicados)
         //e verifica se a quantidade de bandeiras marcadas em volta do número central
         //é igual ao número central
         //se sim, verifica se há quadrados em volta desse número que ainda não foram
         //clicados e não são bombas, e então clica nesses quadrados, pois com certeza
         //não são bombas
+        final List<Tile> toResolve = new ArrayList<>(64);
         Utils.forEach(tiles, t -> {
             if (!t.isNumber()) {
                 return;
             }
             List<Tile> around = t.getAround(tiles);
-            long flags = countFlagBomb(around);
+            int flags = Utils.countFlagBomb(around);
             if ((flags == t.getEnumTile().ordinal()) && (flags < around.size())) {
-                hack[0] = true; //ou seja, pelo menos uma jogada foi realizada
-                click(around, tiles);
+                click(around, tiles, toResolve);
             }
         });
-        //se nenhuma clique foi realizado nessa execução, chama o método 'notFound'
-        if (!hack[0]) {
-            notFound(tiles);
+        if (!toResolve.isEmpty()) {
+            final BufferedImage screenshot = Utils.screenshot(tiles[0][0].getTotalArea());
+            for (Tile t : toResolve) {
+                t.resolve(tiles, screenshot);
+            }
+            return;
         }
+        //se nenhum clique foi realizado na execução acima, invoca o método 'search'
+        //procurando um clique seguro baseado em lógicas avançadas
+        Tile t = AdvancedSearch1.search(tiles);
+        if (t != null) {
+            t.click(tiles, true);
+            return;
+        }
+        //se nenhum clique foi realizado na execução acima, invoca o método 'search'
+        //procurando a melhor opção para clique considerando probabilidades
+        t = SearchLucky.search(tiles);
+        if (t != null) {
+            t.click(tiles, true);
+            return;
+        }
+        //caso não tenha sido encontrado pelo menos um quadrado disponível para 
+        //ser clicado, damos o jogo por finalizado
+        throw new CampoMinadoAIException("Jogo finalizado!");
     }
 
     /**
@@ -211,63 +247,18 @@ public class CampoMinadoBot {
      *
      * @param around quadrados a serem clicados
      * @param tiles grade do campo minado
+     * @param fillToResolve quadrados a serem "resolvidos", ou seja, descobrir o
+     * tipo do quadrado tirando printscreen
      */
-    private static void click(List<Tile> around, Tile[][] tiles) {
+    private static void click(List<Tile> around, Tile[][] tiles, List<Tile> fillToResolve) {
         for (Tile t : around) {
             //executa o clique apenas se o quadrado não estiver marcado com uma bandeira
             if (!t.isFlagBomb()) {
-                t.click(tiles);
-            }
-        }
-    }
-
-    /**
-     * Método executado quando não se encontra uma jogada 'segura'.<br>
-     * Este método irá procurar o local com a maior CHANCE de 'descobrir' um
-     * quadrado sem bomba, desconsiderando dedução/exclusão, simplesmente
-     * calculando a quantidade de quadrados e bandeiras ao redor de um número.
-     *
-     * @param tiles grade do campo minado
-     */
-    private static void notFound(Tile[][] tiles) {
-        List<Tile> founds = new ArrayList<>();
-        //array para poder ser utilizado em classe anônima
-        double[] rate = {1d};
-        Utils.forEach(tiles, t -> {
-            if (!t.isNumber()) {
-                return;
-            }
-
-            List<Tile> around = t.getAround(tiles);
-            long flags = Utils.countFlagBomb(around);
-            double nonClicked = around.size() - flags;
-            double remainingBombs = t.getNumber() - flags;
-
-            //verifica qual é a chance de clicar em um quadrado que não seja bomba
-            //e se essa chance é a menor já encontrada
-            //se sim, armazena os valores
-            if ((remainingBombs / nonClicked) < rate[0]) {
-                rate[0] = remainingBombs / nonClicked;
-                founds.clear();
-                around.stream().filter(Tile::isTile).forEach(founds::add);
-            }
-        });
-        //caso não tenha sido encontrado um local para 'tentar a sorte'
-        //capturamos todos os quadrados que ainda não foram clicados
-        if (founds.isEmpty()) {
-            Utils.forEach(tiles, t -> {
-                if (t.isTile()) {
-                    founds.add(t);
+                if (!t.isClicked()) {
+                    fillToResolve.add(t);
                 }
-            });
-        }
-        //caso tenhamos quadrados para 'tentar a sorte', clicamos em um aleatoriamente
-        if (!founds.isEmpty()) {
-            founds.get(Utils.random(founds.size()) - 1).click(tiles);
-        } else {
-            //caso não tenha sido encontrado pelo menos um quadrado disponível para 
-            //ser clicado, damos o jogo por finalizado
-            throw new CampoMinadoAIException("Jogo finalizado!");
+                t.click(tiles, false);
+            }
         }
     }
 

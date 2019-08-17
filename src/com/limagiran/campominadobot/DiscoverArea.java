@@ -2,9 +2,11 @@ package com.limagiran.campominadobot;
 
 import java.awt.Color;
 import java.awt.Rectangle;
-import java.awt.Toolkit;
 import java.awt.image.BufferedImage;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * Classe responsável por identificar a área do campo minado
@@ -19,8 +21,7 @@ public class DiscoverArea {
      * @return área jogavel ou {@code null} para área não identificada
      */
     public static Rectangle discover() {
-        BufferedImage bi = Utils.ROBOT.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
-        List<int[]> pixels = getBorders(bi);
+        List<int[]> pixels = getBorders(Utils.screenshot());
 
         List<Integer> horizontal = search(pixels, true);
         List<Integer> vertical = search(pixels, false);

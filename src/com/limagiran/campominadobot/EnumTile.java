@@ -2,8 +2,11 @@ package com.limagiran.campominadobot;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
-import java.util.*;
-import java.util.stream.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Representa cada tipo de quadrado diferente possível. (desconsiderei o número
@@ -23,6 +26,8 @@ public enum EnumTile {
     CLICKED(new Color(192, 192, 192)),
     BOMB(Color.WHITE),
     FLAG(new Color(1, 2, 3));
+    
+    public static final EnumTile[] VALUES = values();
 
     /**
      * Cor que distingue cada quadradinho

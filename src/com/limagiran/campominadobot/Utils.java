@@ -1,11 +1,20 @@
 package com.limagiran.campominadobot;
 
+import java.awt.Desktop;
 import java.awt.Rectangle;
 import java.awt.Robot;
 import java.awt.Toolkit;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
-import java.util.*;
-import java.util.function.*;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import javax.swing.JOptionPane;
 
 /**
@@ -18,6 +27,11 @@ public class Utils {
      * Robô utilizado como nosso bot
      */
     public static final Robot ROBOT = createRobot();
+
+    /**
+     * Objeto para gerar números aleatórios quando necessário
+     */
+    public static final Random RANDOM = new Random();
 
     /**
      * Cria um robô ou encerra o programa caso não seja possível instanciar um
@@ -85,6 +99,8 @@ public class Utils {
         return _return;
     }
 
+    private static final int[][] AROUND_ARR_AUX = {{-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}};
+
     /**
      * Captura todos os quadrados que ainda não foram clicados ao redor de um
      * quadrado.
@@ -96,61 +112,96 @@ public class Utils {
      * quadrado
      */
     public static List<Tile> getAround(int x, int y, Tile[][] tiles) {
-        List<Tile> _return = new ArrayList<>();
-        int[] array = {-1, 0, 1};
-        for (int _x : array) {
-            for (int _y : array) {
-                if ((_x == 0) && (_y == 0)) {
-                    continue;
-                }
-                try {
-                    Tile t = tiles[x + _x][y + _y];
-                    if (isNonClicked(t)) {
-                        _return.add(tiles[x + _x][y + _y]);
-                    }
-                } catch (Exception ex) {
-                    //ignore
-                }
+        final List<Tile> _return = new ArrayList<>(16);
+
+        int _x, _y;
+        Tile t;
+        for (int[] xy : AROUND_ARR_AUX) {
+            _x = xy[0] + x;
+            if (_x < 0 || _x >= tiles.length) {
+                continue;
+            }
+            _y = xy[1] + y;
+            if (_y < 0 || _y >= tiles[_x].length) {
+                continue;
+            }
+            t = tiles[_x][_y];
+            if (t.isNonClicked()) {
+                _return.add(t);
             }
         }
         return _return;
     }
 
     /**
-     * Verifica se é um quadrado que ainda não foi clicado
+     * Captura todos os quadrados ao redor de um quadrado.
      *
-     * @param tile quadrado
-     * @return {@code true} para quadrado ainda não clicado. {@code false} o
-     * contrário.
+     * @param x coordenada x do quadrado central
+     * @param y coordenada y do quadrado central
+     * @param tiles grade do campo minado
+     * @return lista de quadrados ao redor de um quadrado
      */
-    public static boolean isNonClicked(Tile tile) {
-        return (tile.isTile() || tile.isFlagBomb());
+    public static List<Tile> getAroundAll(int x, int y, Tile[][] tiles) {
+        final List<Tile> _return = new ArrayList<>(16);
+        int _x, _y;
+        for (int[] xy : AROUND_ARR_AUX) {
+            _x = xy[0] + x;
+            if (_x < 0 || _x >= tiles.length) {
+                continue;
+            }
+            _y = xy[1] + y;
+            if (_y < 0 || _y >= tiles[_x].length) {
+                continue;
+            }
+            _return.add(tiles[_x][_y]);
+        }
+        return _return;
     }
 
     /**
      * Conta quantos quadrados que ainda não foram clicados há na lista
      *
      * @param tiles lista de quadrados
-     * @return {@code true} quantidade de quadrados que ainda não foram
-     * clicados. {@code false} o contrário.
+     * @return quantidade de quadrados que ainda não foram clicados.
      */
-    public static long countNonClicked(List<Tile> tiles) {
-        return tiles.stream()
-                .filter(Utils::isNonClicked)
-                .count();
+    public static int countNonClicked(List<Tile> tiles) {
+        int count = 0;
+        for (Tile t : tiles) {
+            if (t.isNonClicked()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Converte uma lista de {@link Tile} para {@link EnumTile}
+     *
+     * @param tiles lista de quadrados
+     * @return lista mapeada para {@link EnumTile}.
+     */
+    public static List<EnumTile> mapEnumTile(List<Tile> tiles) {
+        final List<EnumTile> _return = new ArrayList<>(tiles.size() * 2);
+        for (Tile t : tiles) {
+            _return.add(t.getEnumTile());
+        }
+        return _return;
     }
 
     /**
      * Conta quantos quadrados são 'bandeira' na lista
      *
      * @param tiles lista de quadrados
-     * @return {@code true} quantidade de quadrados que são 'bandeira'.
-     * {@code false} o contrário.
+     * @return quantidade de quadrados que são 'bandeira'.
      */
-    public static long countFlagBomb(List<Tile> tiles) {
-        return tiles.stream()
-                .filter(Tile::isFlagBomb)
-                .count();
+    public static int countFlagBomb(List<Tile> tiles) {
+        int count = 0;
+        for (Tile t : tiles) {
+            if (t.isFlagBomb()) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**
@@ -161,7 +212,7 @@ public class Utils {
      * {@code max < 1}
      */
     public static int random(int max) {
-        return ((max < 1) ? -1 : (((int) (Math.random() * 1000000) % max) + 1));
+        return (max < 1) ? -1 : RANDOM.nextInt(max) + 1;
     }
 
     /**
@@ -197,11 +248,100 @@ public class Utils {
     }
 
     /**
-     * Screenshot em tela cheia
+     * Screenshot da tela
+     *
+     * @param area área da captura
+     * @return screenshot
+     */
+    public static BufferedImage screenshot(Rectangle area) {
+        return ROBOT.createScreenCapture(area);
+    }
+
+    /**
+     * Screenshot da tela
      *
      * @return screenshot
      */
     public static BufferedImage screenshot() {
-        return ROBOT.createScreenCapture(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
+        return screenshot(new Rectangle(Toolkit.getDefaultToolkit().getScreenSize()));
+    }
+
+    /**
+     * Exportar o arquivo winmine.exe
+     *
+     * @throws Exception
+     */
+    public static void exportWinmine() throws Exception {
+        final String url = "/com/limagiran/campominadobot/winmine.exe";
+        try (InputStream is = Utils.class.getResourceAsStream(url);
+                FileOutputStream fos = new FileOutputStream("winmine.exe")) {
+            int i;
+            byte buf[] = new byte[2048];
+            while ((i = is.read(buf)) >= 0) {
+                fos.write(buf, 0, i);
+            }
+        }
+    }
+
+    /**
+     * Exportar o arquivo e executá-lo
+     */
+    public static void exportAndOpenWinmine() {
+        try {
+            exportWinmine();
+            Desktop.getDesktop().open(new File("winmine.exe"));
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    /**
+     * Verifica se pelo menos um objeto é {@link EnumTile#TILE}
+     *
+     * @param aroundTemp
+     * @return {@code true} para {@link EnumTile#TILE}. {@code false} o
+     * contrário.
+     */
+    public static boolean anyIsTile(List<Tile> aroundTemp) {
+        for (Tile tAround : aroundTemp) {
+            if (tAround.isTile()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Clona cada objeto do array
+     *
+     * @param tiles quadrados do jogo
+     * @return array com a cópia de cada um dos objetos
+     */
+    public static Tile[][] clone(Tile[][] tiles) {
+        final Tile[][] _clone = new Tile[tiles.length][tiles[0].length];
+        final Rectangle totalArea = tiles[0][0].getTotalArea();
+        for (int x = 0; x < tiles.length; x++) {
+            for (int y = 0; y < tiles[x].length; y++) {
+                Tile t = tiles[x][y];
+                Tile newTile = new Tile(t.rect, t.x, t.y, totalArea);
+                newTile.setEnumTile(t.getEnumTile());
+                _clone[x][y] = newTile;
+            }
+        }
+        return _clone;
+    }
+
+    /**
+     *
+     * @param x coordenada x de uma área da tela do winmine.exe
+     * @param y coordenada y de uma área da tela do winmine.exe
+     */
+    public static void restartGame(int x, int y) {
+        ROBOT.mouseMove(x, y);
+        ROBOT.mousePress(InputEvent.BUTTON2_MASK);
+        ROBOT.mouseRelease(InputEvent.BUTTON2_MASK);
+        ROBOT.keyPress(KeyEvent.VK_F2);
+        ROBOT.keyRelease(KeyEvent.VK_F2);
+        sleep(50);
     }
 }
